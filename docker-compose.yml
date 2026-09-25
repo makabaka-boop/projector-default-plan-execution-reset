@@ -1,0 +1,31 @@
+# 穹幕投影机校准路线台 —— 本地编排。
+#
+# 页面发布端口可用环境变量 WEB_PORT 覆盖，默认 8080：
+#   WEB_PORT=9000 docker compose up -d --build web
+#
+# 一次性验收（穷举核对 + N=18 四秒性能指标，跑完即退出）：
+#   docker compose --profile verify run --rm verify
+# 或直接构建后运行：
+#   docker compose --profile verify up --build verify
+services:
+  web:
+    build:
+      context: .
+      target: web
+    image: dome-calibration-web:latest
+    ports:
+      # 宿主 ${WEB_PORT:-8080} -> 容器 80；WEB_PORT 可在 .env / 命令行覆盖
+      - "${WEB_PORT:-8080}:80"
+    restart: unless-stopped
+
+  verify:
+    # 默认不随 `docker compose up` 启动；用 profile verify 显式拉起。
+    # 这是一次性服务：vitest run 结束后容器退出，退出码即验收结果。
+    profiles: ["verify"]
+    build:
+      context: .
+      target: verify
+    image: dome-calibration-verify:latest
+    # 显式声明，防止被编排成长驻服务
+    restart: "no"
+    command: ["npm", "run", "verify"]
