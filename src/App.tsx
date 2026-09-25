@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   type CalibrationPlan,
   createDefaultPlan,
@@ -18,12 +18,15 @@ export function App() {
     return loadPlan(fallback);
   });
   const [tab, setTab] = useState<Tab>('edit');
-  const [planVersion, setPlanVersion] = useState(0); // 进入执行台时重建执行状态
+  // 执行状态纪元：进入执行台或计划被替换（应用新计划/恢复默认）时 +1，
+  // 作为 ExecutionConsole 的 key 强制重建执行状态，旧执行过程不得污染新计划。
+  const [planVersion, setPlanVersion] = useState(0);
   // 工程师在候选集中的选择（全局名次，1 起）；默认首名。
   const [selectedRank, setSelectedRank] = useState(1);
 
   // 当前已生效计划的校准路线候选集（扩展 Held–Karp 一次给出前三名互异精确路线）。
-  // 应用新矩阵时 plan 引用更换，旧候选与选择随之失效：下面的 effect 立即重算并重置选择。
+  // 应用新矩阵/恢复默认时 plan 引用更换，旧候选与选择随之失效：commitPlan 立即
+  // 重算候选、重置选择并推进执行纪元，使执行台与本次计划严格对应。
   const allTargets = useMemo(
     () => Array.from({ length: plan.n }, (_, k) => k + 1),
     [plan.n],
@@ -35,20 +38,25 @@ export function App() {
     [plan, allTargets, preByPose],
   );
 
-  // 新计划生效：选择回到候选首名（旧候选与旧选择一起作废）。
-  useEffect(() => {
+  /**
+   * 让一份计划生效（应用新矩阵或恢复默认共用）：
+   * 落盘、换引用（触发候选重算）、候选选择回到首名、推进执行纪元——
+   * 若执行台正开着（含旧路线已结案），立即按新计划从起点重建执行状态，
+   * 旧的已访问节点、累计费用、剩余步骤与结算一律作废。
+   */
+  function commitPlan(next: CalibrationPlan) {
+    savePlan(next);
+    setPlan(next);
     setSelectedRank(1);
-  }, [plan]);
+    setPlanVersion((v) => v + 1);
+  }
 
   function applyPlan(next: CalibrationPlan) {
-    savePlan(next);
-    setPlan(next); // 引用变化即触发候选重算与选择重置
+    commitPlan(next);
   }
 
   function resetToDefault() {
-    const fallback = createDefaultPlan(12);
-    savePlan(fallback);
-    setPlan(fallback);
+    commitPlan(createDefaultPlan(12));
   }
 
   const selected =
